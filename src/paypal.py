@@ -1,23 +1,22 @@
+import atexit
 import os
-import requests
+
 from dotenv import load_dotenv
+from paypal import PaypalClient
+from paypal.core import ClientCredentials
 
 load_dotenv()
-BASE = "https://api-m.sandbox.paypal.com"
 
-
-def get_token():
-    r = requests.post(
-        f"{BASE}/v1/oauth2/token",
-        auth=(os.getenv("PAYPAL_CLIENT_ID"), os.getenv("PAYPAL_CLIENT_SECRET")),
-        data={"grant_type": "client_credentials"},
-    )
-    return r.json()["access_token"]
+client = PaypalClient(
+    base_url="https://api-m.sandbox.paypal.com",
+    oauth2=ClientCredentials(
+        client_id=os.environ["PAYPAL_CLIENT_ID"],
+        client_secret=os.environ["PAYPAL_CLIENT_SECRET"],
+    ),
+)
+atexit.register(client.close)
 
 
 def get_order(order_id):
-    r = requests.get(
-        f"{BASE}/v2/checkout/orders/{order_id}",
-        headers={"Authorization": f"Bearer {get_token()}"},
-    )
-    return r.json()
+    order = client.orders.get_order(order_id)
+    return order.to_dict(exclude_unset=True)
