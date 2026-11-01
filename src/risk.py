@@ -1,4 +1,5 @@
 import os
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,10 +21,18 @@ MERCHANT_COUNTRY = os.getenv("MERCHANT_COUNTRY", "US")
 MERCHANT_CURRENCY = os.getenv("MERCHANT_CURRENCY", "USD")
 REVIEW_AT = float(os.getenv("REVIEW_AT", "90"))
 HOLD_AT = float(os.getenv("HOLD_AT", "98"))
+RULE_REVIEW_AT = float(os.getenv("RULE_REVIEW_AT", "40"))
+RULE_HOLD_AT = float(os.getenv("RULE_HOLD_AT", "80"))
 MODEL_MIN_AMOUNT = float(os.getenv("MODEL_MIN_AMOUNT", "0"))
+HISTORY_MIN_COUNT = 3
+SEVERITY = {"approve": 0, "review": 1, "hold": 2}
 
 
-def assess(amount, currency="USD", payer_country=None, hour=None):
+def _level(value, review_at, hold_at):
+    return "hold" if value >= hold_at else "review" if value >= review_at else "approve"
+
+
+def assess(amount, currency="USD", payer_country=None, hour=None, prior_amounts=None):
     if hour is None:
         hour = datetime.now(timezone.utc).hour
 
@@ -49,8 +58,21 @@ def assess(amount, currency="USD", payer_country=None, hour=None):
         points += 10
         reasons.append(f"Foreign currency: {currency} vs {MERCHANT_CURRENCY} (+10, policy rule)")
 
+    prior = [a for a in (prior_amounts or []) if a and a > 0]
+    if len(prior) >= HISTORY_MIN_COUNT:
+        med = statistics.median(prior)
+        ratio = amount / med
+        if ratio >= 10:
+            points += 80
+            reasons.append(f"Amount is {ratio:.0f}x this merchant's median payment of {med:,.2f} (+80, policy rule)")
+        elif ratio >= 5:
+            points += 50
+            reasons.append(f"Amount is {ratio:.0f}x this merchant's median payment of {med:,.2f} (+50, policy rule)")
+
     score = min(100.0, model_rank + points)
-    decision = "hold" if score >= HOLD_AT else "review" if score >= REVIEW_AT else "approve"
+    by_score = _level(score, REVIEW_AT, HOLD_AT)
+    by_rules = _level(points, RULE_REVIEW_AT, RULE_HOLD_AT)
+    decision = max(by_score, by_rules, key=lambda d: SEVERITY[d])
     return {
         "risk_score": round(score, 1),
         "decision": decision,
@@ -60,3 +82,4 @@ def assess(amount, currency="USD", payer_country=None, hour=None):
         "reasons": reasons,
         "model_version": VERSION,
     }
+    

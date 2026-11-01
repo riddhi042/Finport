@@ -22,6 +22,16 @@ def init():
 init()
 
 
+def prior_amounts(exclude_capture_id=None, limit=50):
+    with db.conn() as c:
+        rows = c.execute(
+            "SELECT amount FROM assessments WHERE capture_id IS NULL OR capture_id != ? "
+            "ORDER BY id DESC LIMIT ?",
+            (exclude_capture_id or "", limit),
+        ).fetchall()
+    return [r["amount"] for r in rows]
+
+
 class AssessRequest(BaseModel):
     amount: float = Field(gt=0)
     currency: str = "USD"
@@ -34,7 +44,7 @@ class AssessRequest(BaseModel):
 
 def assess_and_store(amount, currency="USD", payer_country=None, hour=None,
                      capture_id=None, order_id=None):
-    r = risk.assess(amount, currency, payer_country, hour)
+    r = risk.assess(amount, currency, payer_country, hour, prior_amounts(capture_id))
     with db.conn() as c:
         c.execute(
             """INSERT INTO assessments (capture_id, order_id, amount, currency,
@@ -52,7 +62,8 @@ def assess_and_store(amount, currency="USD", payer_country=None, hour=None,
 @router.post("/assess")
 def assess_endpoint(req: AssessRequest):
     if req.dry_run:
-        return risk.assess(req.amount, req.currency, req.payer_country, req.hour)
+        return risk.assess(req.amount, req.currency, req.payer_country, req.hour,
+                           prior_amounts(req.capture_id))
     return assess_and_store(req.amount, req.currency, req.payer_country, req.hour,
                             req.capture_id, req.order_id)
 
