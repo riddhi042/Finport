@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from src import db, paypal
+from src import assess
 
 load_dotenv()
 
@@ -15,6 +16,7 @@ if VERIFY_WEBHOOKS and not PAYPAL_WEBHOOK_ID:
     raise RuntimeError("PAYPAL_WEBHOOK_ID is required when VERIFY_WEBHOOKS=true")
 
 app = FastAPI()
+app.include_router(assess.router)
 db.init()
 
 
@@ -73,4 +75,13 @@ async def webhook(request: Request):
         "raw": json.dumps(event),
     })
     print(event.get("event_type"), res.get("id"), country)
+    if event.get("event_type") == "PAYMENT.CAPTURE.COMPLETED":
+        amt = res.get("amount", {})
+        assess.assess_and_store(
+            amount=float(amt.get("value", 0)),
+            currency=amt.get("currency_code", "USD"),
+            payer_country=country,
+            capture_id=res.get("id"),
+            order_id=order_id,
+        )
     return {"received": True}
