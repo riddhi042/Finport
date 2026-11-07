@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "risk_model_v2.joblib"
+MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "risk_model_v1.joblib"
 _bundle = joblib.load(MODEL_PATH)
 MODEL = _bundle["model"]
 FEATURES = _bundle["features"]
